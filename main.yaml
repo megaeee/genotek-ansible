@@ -1,0 +1,153 @@
+---
+
+- name: Swap
+  hosts: localhost
+  tasks:
+    - name: Set vm_init flag
+      ansible.builtin.copy:
+        dest: /vm_init_start
+        content: ''
+      notify:
+        - Delete swap file
+        - Enable swap file
+
+    - name: Remove shutdown flag
+      ansible.builtin.file:
+        state: absent
+        path: /shutdown_mark
+
+  handlers:
+    - name: Delete swap file
+      ansible.builtin.file:
+        state: absent
+        path: /8G.swap
+
+    - name: Enable swap file
+      shell: |
+        set -e
+        fallocate -l 8G /8G.swap
+        chmod 0600 /8G.swap
+        mkswap /8G.swap
+        swapon /8G.swap
+        echo "/8G.swap none swap sw 0 0" >> /etc/fstab
+
+- name: Git
+  hosts: localhost
+  tasks:
+    - name: Prepare repo target
+      ansible.builtin.file:
+        state: directory
+        owner: root
+        group: root
+        mode: 0770
+        path: /mnt/tmp
+        recurse: yes
+      become: yes
+
+    - name: Clone gitlab repo
+      ansible.builtin.git:
+        repo: "https://{{ githubuser | urlencode }}:{{ githubpassword | urlencode }}@gitlab.com/genotek/genotek.git"
+        dest: /mnt/genotek
+        version: vm-rerun
+      register: git_clone
+      until: git_clone is not failed
+      retries: 10
+
+    - name: Move files
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: /mnt
+      with_fileglob:
+        - /mnt/genotek/*
+        - /mnt/genotek/.git
+
+    - name: Create dirs
+      ansible.builtin.file:
+        path: /mnt/{{item.path}}
+        state: directory
+        mode:  '0775'
+      with_filetree: /mnt/genotek/
+      when: item.state == 'directory'
+
+    - name: Move files
+      ansible.builtin.copy:
+        src: "{{item.src}}"
+        dest: /mnt/{{item.path}}
+        mode:  '0744'
+      with_filetree: /mnt/genotek/
+      when: item.state == 'file'
+
+    - name: Make scripts executable
+      ansible.builtin.file:
+        state: directory
+        mode: 0777
+        path: /mnt/scripts
+        recurse: yes
+      become: yes
+
+    - name: Cleanup
+      ansible.builtin.file:
+        state: absent
+        path: /mnt/genotek
+
+  handlers:
+    - name: Send telegram notification
+      command: "telegram_notification \"!!! Instance $HOSTNAME could not download code from the repository !!!\";"
+
+    - name: Halt system
+      command: /sbin/shutdown -h now
+      become: yes
+
+- name: YC
+  hosts: localhost
+  become: yes
+  vars:
+    yc_config: '/home/yc-user/yandex-cloud/bin/yc config'
+  tasks:
+    - name: Add token for yc-user
+      ansible.builtin.copy:
+        dest: /vm_init_start
+        content: "{{ yctoken }}"
+
+    - name: python-pip
+      ansible.builtin.package:
+        name: python3-pip
+        state: latest
+
+    - name: Update awscli
+      ansible.builtin.pip:
+        name: awscli
+        state: forcereinstall
+
+    - name: Profile create
+      command: "{{ yc_config }} profile create test-profile"
+
+    - name: Set cloud ID
+      command: "{{ yc_config }} set cloud-id {{ yccloudid }}"
+
+    - name: Set folder ID
+      command: "{{ yc_config }} set folder-id {{ ycfolderid }}"
+
+    - name: Set instance SA flag
+      command: "{{ yc_config }} set instance-service-account true"
+
+- name: YC
+  hosts: localhost
+  vars:
+    python_path: "{{ lookup('env', 'PYTHONPATH') | default ('/bin:/usr/bin', True) }}"
+  tasks:
+    - name: Make scripts executable
+      ansible.builtin.file:
+        state: directory
+        mode: 0777
+        path: /mnt
+        recurse: yes
+      become: yes
+
+    - name: Run pipeline
+      command: 'python -u /mnt/pipeline.py UniteChipHVS --ExperimentID {{ expid }} --TelegramQuiet --MemoryLimitPerThread 8g --ShutdownPolicy delete 2>&1 | tee -a /mnt/tmp/log.UniteChipHVS.log'
+      environment:
+        LD_LIBRARY_PATH: /usr/lib
+        PERL5LIB: /mnt/db/tools/mitoSeek:/mnt/db/tools/mitoSeek/Resources/circos-0.56/bin
+        PYTHONPATH: "{{ [python_path, '/mnt']|join(':') }}"
+      become: yes
