@@ -49,7 +49,7 @@
       ansible.builtin.git:
         repo: "https://{{ githubuser | urlencode }}:{{ githubpassword | urlencode }}@gitlab.com/genotek/genotek.git"
         dest: /mnt/genotek
-        version: vm-rerun
+        version: rerun-vm
       register: git_clone
       until: git_clone is not failed
       retries: 10
