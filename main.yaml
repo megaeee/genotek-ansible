@@ -2,6 +2,7 @@
 
 - name: Swap
   hosts: localhost
+  become: yes
   tasks:
     - name: Set vm_init flag
       ansible.builtin.copy:
@@ -33,6 +34,7 @@
 
 - name: Git
   hosts: localhost
+  become: yes
   tasks:
     - name: Prepare repo target
       ansible.builtin.file:
@@ -42,7 +44,6 @@
         mode: 0770
         path: /mnt/tmp
         recurse: yes
-      become: yes
 
     - name: Clone gitlab repo
       ansible.builtin.git:
@@ -83,7 +84,6 @@
         mode: 0777
         path: /mnt/scripts
         recurse: yes
-      become: yes
 
     - name: Cleanup
       ansible.builtin.file:
@@ -96,7 +96,6 @@
 
     - name: Halt system
       command: /sbin/shutdown -h now
-      become: yes
 
 - name: YC
   hosts: localhost
@@ -133,6 +132,7 @@
 
 - name: YC
   hosts: localhost
+  become: yes
   vars:
     python_path: "{{ lookup('env', 'PYTHONPATH') | default ('/bin:/usr/bin', True) }}"
   tasks:
