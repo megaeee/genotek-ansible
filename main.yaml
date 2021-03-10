@@ -54,14 +54,6 @@
       until: git_clone is not failed
       retries: 10
 
-    - name: Move files
-      ansible.builtin.copy:
-        src: "{{ item }}"
-        dest: /mnt
-      with_fileglob:
-        - /mnt/genotek/*
-        - /mnt/genotek/.git
-
     - name: Create dirs
       ansible.builtin.file:
         path: /mnt/{{item.path}}
@@ -110,7 +102,7 @@
 
     - name: python-pip
       ansible.builtin.package:
-        name: python3-pip
+        name: python-pip
         state: latest
 
     - name: Update awscli
@@ -130,7 +122,7 @@
     - name: Set instance SA flag
       command: "{{ yc_config }} set instance-service-account true"
 
-- name: YC
+- name: Pipeline
   hosts: localhost
   become: yes
   vars:
@@ -142,7 +134,6 @@
         mode: 0777
         path: /mnt
         recurse: yes
-      become: yes
 
     - name: Run pipeline
       command: 'python -u /mnt/pipeline.py UniteChipHVS --ExperimentID {{ expid }} --TelegramQuiet --MemoryLimitPerThread 8g --ShutdownPolicy delete 2>&1 | tee -a /mnt/tmp/log.UniteChipHVS.log'
@@ -150,4 +141,3 @@
         LD_LIBRARY_PATH: /usr/lib
         PERL5LIB: /mnt/db/tools/mitoSeek:/mnt/db/tools/mitoSeek/Resources/circos-0.56/bin
         PYTHONPATH: "{{ [python_path, '/mnt']|join(':') }}"
-      become: yes
